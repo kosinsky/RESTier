@@ -6,6 +6,8 @@ using System.Web.OData.Extensions;
 using Microsoft.Restier.Samples.Northwind.Controllers;
 using Microsoft.Restier.WebApi;
 using Microsoft.Restier.WebApi.Batch;
+using System.Web.OData.Builder;
+using Microsoft.Restier.Samples.Northwind.Models;
 
 namespace Microsoft.Restier.Samples.Northwind
 {
@@ -21,11 +23,13 @@ namespace Microsoft.Restier.Samples.Northwind
             config.EnableUnqualifiedNameCall(true);
             RegisterNorthwind(config, GlobalConfiguration.DefaultServer);
 
-            config.Routes.MapHttpRoute(
-                name: "DefaultApi",
-                routeTemplate: "api/{controller}/{id}",
-                defaults: new { id = RouteParameter.Optional }
-            );
+
+            var builder = new ODataConventionModelBuilder();
+
+            builder.EntitySet<Product>("SimpleProducts");
+
+            config.MapODataServiceRoute("ODataRoute", null, builder.GetEdmModel());
+
         }
 
         public static async void RegisterNorthwind(

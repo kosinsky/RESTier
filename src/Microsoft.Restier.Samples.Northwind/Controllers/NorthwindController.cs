@@ -28,92 +28,92 @@ namespace Microsoft.Restier.Samples.Northwind.Controllers
             }
         }
 
-        // OData Attribute Routing
-        [ODataRoute("Customers({key})/CompanyName")]
-        [ODataRoute("Customers({key})/CompanyName/$value")]
-        public string GetCustomerCompanyName([FromODataUri]string key)
-        {
-            return DbContext.Customers.Where(c => c.CustomerID == key).Select(c => c.CompanyName).FirstOrDefault();
-        }
+        ////// OData Attribute Routing
+        ////[ODataRoute("Customers({key})/CompanyName")]
+        ////[ODataRoute("Customers({key})/CompanyName/$value")]
+        ////public string GetCustomerCompanyName([FromODataUri]string key)
+        ////{
+        ////    return DbContext.Customers.Where(c => c.CustomerID == key).Select(c => c.CompanyName).FirstOrDefault();
+        ////}
 
-        [ODataRoute("Products/$count")]
-        public IHttpActionResult GetProductsCount()
-        {
-            return Ok(DbContext.Products.Count());
-        }
+        ////[ODataRoute("Products/$count")]
+        ////public IHttpActionResult GetProductsCount()
+        ////{
+        ////    return Ok(DbContext.Products.Count());
+        ////}
 
-        [HttpPut]
-        [ODataRoute("Products({key})/UnitPrice")]
-        public IHttpActionResult UpdateProductUnitPrice(int key, [FromBody]decimal price)
-        {
-            var entity = DbContext.Products.FirstOrDefault(e => e.ProductID == key);
-            if (entity == null)
-            {
-                return NotFound();
-            }
-            entity.UnitPrice = price;
+        ////[HttpPut]
+        ////[ODataRoute("Products({key})/UnitPrice")]
+        ////public IHttpActionResult UpdateProductUnitPrice(int key, [FromBody]decimal price)
+        ////{
+        ////    var entity = DbContext.Products.FirstOrDefault(e => e.ProductID == key);
+        ////    if (entity == null)
+        ////    {
+        ////        return NotFound();
+        ////    }
+        ////    entity.UnitPrice = price;
 
-            try
-            {
-                DbContext.SaveChanges();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!DbContext.Products.Any(p => p.ProductID == key))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-            return Ok(price);
-        }
+        ////    try
+        ////    {
+        ////        DbContext.SaveChanges();
+        ////    }
+        ////    catch (DbUpdateConcurrencyException)
+        ////    {
+        ////        if (!DbContext.Products.Any(p => p.ProductID == key))
+        ////        {
+        ////            return NotFound();
+        ////        }
+        ////        else
+        ////        {
+        ////            throw;
+        ////        }
+        ////    }
+        ////    return Ok(price);
+        ////}
 
-        [HttpGet]
-        [ODataRoute("Products/Microsoft.Restier.Samples.Northwind.Models.MostExpensive")]
-        public IHttpActionResult MostExpensive()
-        {
-            var product = DbContext.Products.Max(p => p.UnitPrice);
-            return Ok(product);
-        }
+        ////[HttpGet]
+        ////[ODataRoute("Products/Microsoft.Restier.Samples.Northwind.Models.MostExpensive")]
+        ////public IHttpActionResult MostExpensive()
+        ////{
+        ////    var product = DbContext.Products.Max(p => p.UnitPrice);
+        ////    return Ok(product);
+        ////}
 
-        [HttpPost]
-        [ODataRoute("Products({key})/Microsoft.Restier.Samples.Northwind.Models.IncreasePrice")]
-        public IHttpActionResult IncreasePrice([FromODataUri] int key, ODataActionParameters parameters)
-        {
-            var entity = DbContext.Products.FirstOrDefault(e => e.ProductID == key);
-            if (entity == null)
-            {
-                return NotFound();
-            }
-            entity.UnitPrice = entity.UnitPrice + (int)parameters["diff"];
+        ////[HttpPost]
+        ////[ODataRoute("Products({key})/Microsoft.Restier.Samples.Northwind.Models.IncreasePrice")]
+        ////public IHttpActionResult IncreasePrice([FromODataUri] int key, ODataActionParameters parameters)
+        ////{
+        ////    var entity = DbContext.Products.FirstOrDefault(e => e.ProductID == key);
+        ////    if (entity == null)
+        ////    {
+        ////        return NotFound();
+        ////    }
+        ////    entity.UnitPrice = entity.UnitPrice + (int)parameters["diff"];
 
-            try
-            {
-                DbContext.SaveChanges();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!DbContext.Products.Any(p => p.ProductID == key))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-            return StatusCode(HttpStatusCode.NoContent);
-        }
+        ////    try
+        ////    {
+        ////        DbContext.SaveChanges();
+        ////    }
+        ////    catch (DbUpdateConcurrencyException)
+        ////    {
+        ////        if (!DbContext.Products.Any(p => p.ProductID == key))
+        ////        {
+        ////            return NotFound();
+        ////        }
+        ////        else
+        ////        {
+        ////            throw;
+        ////        }
+        ////    }
+        ////    return StatusCode(HttpStatusCode.NoContent);
+        ////}
 
-        [HttpPost]
-        [ODataRoute("ResetDataSource")]
-        public IHttpActionResult ResetDataSource()
-        {
-            DbContext.ResetDataSource();
-            return StatusCode(HttpStatusCode.NoContent);
-        }
+        ////[HttpPost]
+        ////[ODataRoute("ResetDataSource")]
+        ////public IHttpActionResult ResetDataSource()
+        ////{
+        ////    DbContext.ResetDataSource();
+        ////    return StatusCode(HttpStatusCode.NoContent);
+        ////}
     }
 }
