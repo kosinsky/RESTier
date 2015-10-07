@@ -66,7 +66,7 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Core" />
     <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Web.Extensions" />    
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Web" />
@@ -175,6 +175,10 @@
     <ProjectReference Include="..\Microsoft.Restier.WebApi\Microsoft.Restier.WebApi.csproj">
       <Project>{186f667e-54e5-4b57-9998-21d74cb77c24}</Project>
       <Name>Microsoft.Restier.WebApi</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\WebApi\OData\src\System.Web.OData\System.Web.OData.csproj">
+      <Project>{989a83cc-b864-4a75-8bf3-5eda99203a86}</Project>
+      <Name>Microsoft.OData.Core</Name>
     </ProjectReference>
   </ItemGroup>
   <PropertyGroup>
