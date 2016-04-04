@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.  All rights reserved.
 // Licensed under the MIT License.  See License.txt in the project root for license information.
 
-using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Microsoft.Restier.Core.Tests
@@ -11,29 +11,31 @@ namespace Microsoft.Restier.Core.Tests
         [Fact]
         public void NewInvocationContextIsConfiguredCorrectly()
         {
-            var configuration = new DomainConfiguration();
-            configuration.EnsureCommitted();
-            var domainContext = new DomainContext(configuration);
-            var context = new InvocationContext(domainContext);
-            Assert.Same(domainContext, context.DomainContext);
+            var configuration = new ServiceCollection()
+                .BuildApiConfiguration();
+            var apiContext = new ApiContext(configuration);
+            var context = new InvocationContext(apiContext);
+            Assert.Same(apiContext, context.ApiContext);
         }
 
         [Fact]
         public void InvocationContextGetsHookPointsCorrectly()
         {
-            var configuration = new DomainConfiguration();
-            var singletonHookPoint = new object();
-            configuration.SetHookPoint(typeof(object), singletonHookPoint);
-            var multiCastHookPoint = new object();
-            configuration.AddHookPoint(typeof(object), multiCastHookPoint);
-            configuration.EnsureCommitted();
+            var hook = new HookA();
+            var configuration = new ServiceCollection()
+                .CutoffPrevious<IHookA>(hook)
+                .BuildApiConfiguration();
+            var apiContext = new ApiContext(configuration);
+            var context = new InvocationContext(apiContext);
+            Assert.Same(hook, context.GetApiService<IHookA>());
+        }
 
-            var domainContext = new DomainContext(configuration);
-            var context = new InvocationContext(domainContext);
+        private interface IHookA
+        {
+        }
 
-            Assert.Same(singletonHookPoint, context.GetHookPoint<object>());
-            Assert.True(context.GetHookPoints<object>()
-                .SequenceEqual(new object[] { multiCastHookPoint }));
+        private class HookA : IHookA
+        {
         }
     }
 }

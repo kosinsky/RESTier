@@ -2,19 +2,20 @@
 <package >
   <metadata>
     <id>Microsoft.Restier</id>
-    <version>0.3.0-beta2</version>
+    <version>0.5.0-beta</version>
     <title>RESTier</title>
     <authors>Microsoft</authors>
     <owners>Microsoft</owners>
     <description>Includes RESTier related packages. RESTier is a RESTful API development framework for building standardized, OData V4 based RESTful services on .NET.</description>
     <licenseUrl>http://opensource.org/licenses/MIT</licenseUrl>
+    <projectUrl>http://odata.github.io/</projectUrl>
+    <releaseNotes>http://odata.github.io/RESTier/</releaseNotes>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <copyright></copyright>
     <dependencies>
-      <dependency id="Microsoft.Restier.Core" version="[0.3.0-beta2,]" />
-      <dependency id="Microsoft.Restier.Conventions" version="[0.3.0-beta2,]" />
-      <dependency id="Microsoft.Restier.EntityFramework" version="[0.3.0-beta2,]" />
-      <dependency id="Microsoft.Restier.WebApi" version="[0.3.0-beta2,]" />
+      <dependency id="Microsoft.Restier.Core" version="[0.5.0-beta]" />
+      <dependency id="Microsoft.Restier.EntityFramework" version="[0.5.0-beta]" />
+      <dependency id="Microsoft.Restier.WebApi" version="[0.5.0-beta]" />
     </dependencies>
   </metadata>
 </package>

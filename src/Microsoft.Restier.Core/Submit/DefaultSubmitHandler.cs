@@ -15,15 +15,8 @@ namespace Microsoft.Restier.Core.Submit
     /// <summary>
     /// Represents the default submit handler.
     /// </summary>
-    public class DefaultSubmitHandler : ISubmitHandler
+    internal static class DefaultSubmitHandler
     {
-        /// <summary>
-        /// The maximum numbers of loops for the pre-persisting events save loop
-        /// and the post-persisting events save loops allowed before the DataService
-        /// stops processing to prevent potential infinite loop.
-        /// </summary>
-        private const int MaxLoop = 200;
-
         /// <summary>
         /// Asynchronously executes the submit flow.
         /// </summary>
@@ -37,81 +30,37 @@ namespace Microsoft.Restier.Core.Submit
         /// A task that represents the asynchronous
         /// operation whose result is a submit result.
         /// </returns>
-        public async Task<SubmitResult> SubmitAsync(
+        public static async Task<SubmitResult> SubmitAsync(
             SubmitContext context, CancellationToken cancellationToken)
         {
             Ensure.NotNull(context, "context");
 
-            var preparer = context.GetHookPoint<IChangeSetPreparer>();
+            var preparer = context.GetApiService<IChangeSetPreparer>();
             if (preparer == null)
             {
-                throw new NotSupportedException();
+                throw new NotSupportedException(Resources.ChangeSetPreparerMissing);
             }
 
             await preparer.PrepareAsync(context, cancellationToken);
-
-            // authorize
-            var authorized = true;
-            foreach (var authorizer in context
-                .GetHookPoints<ISubmitAuthorizer>().Reverse())
-            {
-                authorized = await authorizer.AuthorizeAsync(
-                    context, cancellationToken);
-                if (!authorized || context.Result != null)
-                {
-                    break;
-                }
-            }
-
-            if (!authorized)
-            {
-                // TODO GitHubIssue#32 : Figure out a more appropriate exception
-                throw new SecurityException();
-            }
 
             if (context.Result != null)
             {
                 return context.Result;
             }
 
-            ChangeSet eventsChangeSet = context.ChangeSet;
+            var eventsChangeSet = context.ChangeSet;
 
-            IEnumerable<ChangeSetEntry> currentChangeSetItems;
-            int outerLoopCount = 0;
+            IEnumerable<ChangeSetEntry> currentChangeSetItems = eventsChangeSet.Entries.ToArray();
 
-            do
-            {
-                outerLoopCount++;
-                int innerLoopCount = 0;
-                do
-                {
-                    innerLoopCount++;
-                    eventsChangeSet.AnEntityHasChanged = false;
-                    currentChangeSetItems = eventsChangeSet.Entries.ToArray();
+            await PerformValidate(context, currentChangeSetItems, cancellationToken);
 
-                    if (eventsChangeSet.AnEntityHasChanged)
-                    {
-                        eventsChangeSet.AnEntityHasChanged = false;
-                        currentChangeSetItems = eventsChangeSet.Entries.ToArray();
-                    }
+            await PerformPreEvent(context, currentChangeSetItems, cancellationToken);
 
-                    await PerformValidate(context, currentChangeSetItems, cancellationToken);
+            await PerformPersist(context, currentChangeSetItems, cancellationToken);
 
-                    await PerformPreEvent(context, currentChangeSetItems, cancellationToken);
-                }
-                while (eventsChangeSet.AnEntityHasChanged && (innerLoopCount < MaxLoop));
+            context.ChangeSet.Entries.Clear();
 
-                VerifyNoEntityHasChanged(eventsChangeSet);
-
-                await PerformPersist(context, currentChangeSetItems, cancellationToken);
-
-                eventsChangeSet.Entries.Clear();
-
-                await PerformPostEvent(context, currentChangeSetItems, cancellationToken);
-            }
-            while (eventsChangeSet.AnEntityHasChanged && (outerLoopCount < MaxLoop));
-
-            VerifyNoEntityHasChanged(eventsChangeSet);
+            await PerformPostEvent(context, currentChangeSetItems, cancellationToken);
 
             return context.Result;
         }
@@ -120,48 +69,40 @@ namespace Microsoft.Restier.Core.Submit
         {
             switch (entry.Type)
             {
-            case ChangeSetEntryType.DataModification:
-                DataModificationEntry dataModification = (DataModificationEntry)entry;
-                string message = null;
-                if (dataModification.IsNew)
-                {
-                    message = Resources.NoPermissionToInsertEntity;
-                }
-                else if (dataModification.IsUpdate)
-                {
-                    message = Resources.NoPermissionToUpdateEntity;
-                }
-                else if (dataModification.IsDelete)
-                {
-                    message = Resources.NoPermissionToDeleteEntity;
-                }
-                else
-                {
-                    throw new NotSupportedException(Resources.DataModificationMustBeCUD);
-                }
+                case ChangeSetEntryType.DataModification:
+                    DataModificationEntry dataModification = (DataModificationEntry)entry;
+                    string message = null;
+                    if (dataModification.IsNew)
+                    {
+                        message = Resources.NoPermissionToInsertEntity;
+                    }
+                    else if (dataModification.IsUpdate)
+                    {
+                        message = Resources.NoPermissionToUpdateEntity;
+                    }
+                    else if (dataModification.IsDelete)
+                    {
+                        message = Resources.NoPermissionToDeleteEntity;
+                    }
+                    else
+                    {
+                        throw new NotSupportedException(Resources.DataModificationMustBeCUD);
+                    }
 
-                return string.Format(CultureInfo.InvariantCulture, message, dataModification.EntitySetName);
+                    return string.Format(CultureInfo.InvariantCulture, message, dataModification.EntitySetName);
 
-            case ChangeSetEntryType.ActionInvocation:
-                ActionInvocationEntry actionInvocation = (ActionInvocationEntry)entry;
-                return string.Format(
-                    CultureInfo.InvariantCulture,
-                    Resources.NoPermissionToInvokeAction,
-                    actionInvocation.ActionName);
+                case ChangeSetEntryType.ActionInvocation:
+                    ActionInvocationEntry actionInvocation = (ActionInvocationEntry)entry;
+                    return string.Format(
+                        CultureInfo.InvariantCulture,
+                        Resources.NoPermissionToInvokeAction,
+                        actionInvocation.ActionName);
 
-            default:
-                throw new InvalidOperationException(string.Format(
-                    CultureInfo.InvariantCulture,
-                    Resources.InvalidChangeSetEntryType,
-                    entry.Type));
-            }
-        }
-
-        private static void VerifyNoEntityHasChanged(ChangeSet changeSet)
-        {
-            if (changeSet.AnEntityHasChanged)
-            {
-                throw new InvalidOperationException(Resources.ErrorInVerifyingNoEntityHasChanged);
+                default:
+                    throw new InvalidOperationException(string.Format(
+                        CultureInfo.InvariantCulture,
+                        Resources.InvalidChangeSetEntryType,
+                        entry.Type));
             }
         }
 
@@ -192,22 +133,17 @@ namespace Microsoft.Restier.Core.Submit
             IEnumerable<ChangeSetEntry> changeSetItems,
             CancellationToken cancellationToken)
         {
+            var authorizer = context.GetApiService<IChangeSetEntryAuthorizer>();
+            if (authorizer == null)
+            {
+                return;
+            }
+
             foreach (ChangeSetEntry entry in changeSetItems.Where(i => i.HasChanged()))
             {
-                string message = null;
-
-                foreach (var authorizer in context
-                    .GetHookPoints<IChangeSetEntryAuthorizer>().Reverse())
+                if (!await authorizer.AuthorizeAsync(context, entry, cancellationToken))
                 {
-                    if (!await authorizer.AuthorizeAsync(context, entry, cancellationToken))
-                    {
-                        message = DefaultSubmitHandler.GetAuthorizeFailedMessage(entry);
-                        break;
-                    }
-                }
-
-                if (message != null)
-                {
+                    var message = DefaultSubmitHandler.GetAuthorizeFailedMessage(entry);
                     throw new SecurityException(message);
                 }
             }
@@ -218,15 +154,17 @@ namespace Microsoft.Restier.Core.Submit
             IEnumerable<ChangeSetEntry> changeSetItems,
             CancellationToken cancellationToken)
         {
+            var validator = context.GetApiService<IChangeSetEntryValidator>();
+            if (validator == null)
+            {
+                return;
+            }
+
             ValidationResults validationResults = new ValidationResults();
 
             foreach (ChangeSetEntry entry in changeSetItems.Where(i => i.HasChanged()))
             {
-                foreach (var validator in context
-                    .GetHookPoints<IChangeSetEntryValidator>().Reverse())
-                {
-                    await validator.ValidateEntityAsync(context, entry, validationResults, cancellationToken);
-                }
+                await validator.ValidateEntityAsync(context, entry, validationResults, cancellationToken);
             }
 
             if (validationResults.HasErrors)
@@ -250,8 +188,8 @@ namespace Microsoft.Restier.Core.Submit
                 {
                     entry.ChangeSetEntityState = DynamicChangeSetEntityState.PreEventing;
 
-                    foreach (var filter in context
-                        .GetHookPoints<IChangeSetEntryFilter>().Reverse())
+                    var filter = context.GetApiService<IChangeSetEntryFilter>();
+                    if (filter != null)
                     {
                         await filter.OnExecutingEntryAsync(context, entry, cancellationToken);
                     }
@@ -299,10 +237,10 @@ namespace Microsoft.Restier.Core.Submit
                 }
             }
 
-            var executor = context.GetHookPoint<ISubmitExecutor>();
+            var executor = context.GetApiService<ISubmitExecutor>();
             if (executor == null)
             {
-                throw new NotSupportedException();
+                throw new NotSupportedException(Resources.SubmitExecutorMissing);
             }
 
             context.Result = await executor.ExecuteSubmitAsync(context, cancellationToken);
@@ -315,7 +253,8 @@ namespace Microsoft.Restier.Core.Submit
         {
             foreach (ChangeSetEntry entry in changeSetItems)
             {
-                foreach (var filter in context.GetHookPoints<IChangeSetEntryFilter>())
+                var filter = context.GetApiService<IChangeSetEntryFilter>();
+                if (filter != null)
                 {
                     await filter.OnExecutedEntryAsync(context, entry, cancellationToken);
                 }

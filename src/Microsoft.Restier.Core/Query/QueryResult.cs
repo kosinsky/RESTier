@@ -4,6 +4,7 @@
 using System;
 using System.Collections;
 using Microsoft.OData.Edm;
+using Microsoft.Restier.Core.Properties;
 
 namespace Microsoft.Restier.Core.Query
 {
@@ -15,7 +16,6 @@ namespace Microsoft.Restier.Core.Query
         private Exception error;
         private IEdmEntitySet resultsSource;
         private IEnumerable results;
-        private long? totalCount;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="QueryResult" /> class with an error.
@@ -35,18 +35,10 @@ namespace Microsoft.Restier.Core.Query
         /// <param name="results">
         /// In-memory results.
         /// </param>
-        /// <param name="totalCount">
-        /// The total number of items represented by the
-        /// results had paging operators not been applied.
-        /// </param>
-        public QueryResult(IEnumerable results, long? totalCount = null)
+        public QueryResult(IEnumerable results)
         {
             Ensure.NotNull(results, "results");
             this.Results = results;
-            if (totalCount != null)
-            {
-                this.TotalCount = totalCount;
-            }
         }
 
         /// <summary>
@@ -68,7 +60,6 @@ namespace Microsoft.Restier.Core.Query
                 this.error = value;
                 this.resultsSource = null;
                 this.results = null;
-                this.totalCount = null;
             }
         }
 
@@ -90,7 +81,8 @@ namespace Microsoft.Restier.Core.Query
             {
                 if (this.error != null)
                 {
-                    throw new InvalidOperationException();
+                    throw new InvalidOperationException(
+                        Resources.CannotSetResultsSourceIfThereIsAnyError);
                 }
 
                 this.resultsSource = value;
@@ -116,34 +108,6 @@ namespace Microsoft.Restier.Core.Query
                 this.error = null;
                 this.resultsSource = null;
                 this.results = value;
-                this.totalCount = null;
-            }
-        }
-
-        /// <summary>
-        /// Gets or sets the total number of items available but not
-        /// returned by a query whose items were filtered for paging.
-        /// </summary>
-        /// <remarks>
-        /// This should be <c>null</c> if total count
-        /// is not supported or was not requested.
-        /// </remarks>
-        public long? TotalCount
-        {
-            get
-            {
-                return this.totalCount;
-            }
-
-            set
-            {
-                if (this.results == null)
-                {
-                    throw new InvalidOperationException();
-                }
-
-                Ensure.NotNull(value, "value");
-                this.totalCount = value;
             }
         }
     }

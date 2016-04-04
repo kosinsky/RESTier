@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Restier.Core.Submit;
-using Microsoft.Restier.EntityFramework.Submit;
 using Microsoft.Restier.EntityFramework.Tests.Models.Library;
 using Xunit;
 
@@ -18,7 +17,7 @@ namespace Microsoft.Restier.EntityFramework.Tests
         public async Task ComplexTypeUpdate()
         {
             // Arrange
-            var libraryDomain = new LibraryDomain();
+            var libraryApi = new LibraryApi();
             var entry = new DataModificationEntry(
                 "Readers",
                 "Person",
@@ -26,10 +25,11 @@ namespace Microsoft.Restier.EntityFramework.Tests
                 new Dictionary<string, object>(),
                 new Dictionary<string, object> { { "Addr", new Dictionary<string, object> { { "Zip", "332" } } } });
             var changeSet = new ChangeSet(new[] { entry });
-            var sc = new SubmitContext(libraryDomain.Context, changeSet);
+            var sc = new SubmitContext(libraryApi.Context, changeSet);
 
             // Act
-            await ChangeSetPreparer.Instance.PrepareAsync(sc, CancellationToken.None);
+            var changeSetPreparer = libraryApi.Context.Configuration.GetApiService<IChangeSetPreparer>();
+            await changeSetPreparer.PrepareAsync(sc, CancellationToken.None);
             var person = entry.Entity as Person;
 
             // Assert

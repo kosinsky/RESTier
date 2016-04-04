@@ -14,7 +14,20 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.Extensions.DependencyInjection, Version=1.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\Microsoft.Extensions.DependencyInjection.1.0.0-rc1-final\lib\net451\Microsoft.Extensions.DependencyInjection.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\Microsoft.Extensions.DependencyInjection.Abstractions.1.0.0-rc1-final\lib\net451\Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.OData.Edm, Version=6.15.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\Microsoft.OData.Edm.6.15.0\lib\portable-net45+win+wpa81\Microsoft.OData.Edm.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System" />
+    <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
@@ -25,11 +38,11 @@
       <Link>GlobalSuppressions.cs</Link>
       <ExcludeFromStyleCop>true</ExcludeFromStyleCop>
     </Compile>
+    <Compile Include="..\Shared\EdmHelpers.cs">
+      <Link>Shared\EdmHelpers.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\Ensure.cs">
       <Link>Shared\Ensure.cs</Link>
-    </Compile>
-    <Compile Include="..\Shared\Error.cs">
-      <Link>Shared\Error.cs</Link>
     </Compile>
     <Compile Include="..\Shared\ExpressionHelperMethods.cs">
       <Link>Shared\ExpressionHelperMethods.cs</Link>
@@ -40,27 +53,27 @@
     <Compile Include="..\Shared\TypeExtensions.cs">
       <Link>Shared\TypeExtensions.cs</Link>
     </Compile>
-    <Compile Include="Domain.cs" />
-    <Compile Include="Domain.OfT.cs" />
-    <Compile Include="DomainBase.cs" />
-    <Compile Include="DomainConfiguration.cs" />
-    <Compile Include="DomainContext.cs" />
-    <Compile Include="DomainData.cs" />
-    <Compile Include="DomainParticipantAttribute.cs" />
-    <Compile Include="EdmLibHelpers.cs" />
-    <Compile Include="IDomain.cs" />
-    <Compile Include="IDomainProfiler.cs" />
-    <Compile Include="IDomainPolicy.cs" />
-    <Compile Include="IExpandableDomain.cs" />
+    <Compile Include="ApiContextExtensions.cs" />
+    <Compile Include="ServiceCollectionExtensions.cs" />
+    <Compile Include="Model\FunctionAttribute.cs" />
+    <Compile Include="Model\ActionAttribute.cs" />
+    <Compile Include="Conventions\ConventionBasedChangeSetAuthorizer.cs" />
+    <Compile Include="Conventions\ConventionBasedChangeSetConstants.cs" />
+    <Compile Include="Conventions\ConventionBasedChangeSetEntryFilter.cs" />
+    <Compile Include="Conventions\ConventionBasedChangeSetEntryValidator.cs" />
+    <Compile Include="Conventions\ConventionBasedApiModelBuilder.cs" />
+    <Compile Include="Conventions\ConventionBasedEntitySetFilter.cs" />
+    <Compile Include="Conventions\ConventionBasedOperationProvider.cs" />
+    <Compile Include="ApiBaseExtensions.cs" />
+    <Compile Include="ApiBase.cs" />
+    <Compile Include="ApiConfiguration.cs" />
+    <Compile Include="ApiConfigurationExtensions.cs" />
+    <Compile Include="ApiContext.cs" />
+    <Compile Include="DataSourceStubs.cs" />
+    <Compile Include="ApiConfiguratorAttribute.cs" />
     <Compile Include="InvocationContext.cs" />
-    <Compile Include="Model\DefaultModelHandler.cs" />
-    <Compile Include="Model\DomainModel.cs" />
-    <Compile Include="Model\IModelExtender.cs" />
-    <Compile Include="Model\IModelHandler.cs" />
+    <Compile Include="Model\IModelBuilder.cs" />
     <Compile Include="Model\IModelMapper.cs" />
-    <Compile Include="Model\IModelProducer.cs" />
-    <Compile Include="Model\IModelVisibilityFilter.cs" />
-    <Compile Include="Model\ModelContext.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
@@ -69,15 +82,13 @@
     </Compile>
     <Compile Include="PropertyBag.cs" />
     <Compile Include="QueryableSource.cs" />
+    <Compile Include="Query\DefaultQueryExecutor.cs" />
     <Compile Include="Query\DefaultQueryHandler.cs" />
     <Compile Include="Query\IQueryExecutor.cs" />
     <Compile Include="Query\IQueryExpressionExpander.cs" />
     <Compile Include="Query\IQueryExpressionFilter.cs" />
     <Compile Include="Query\IQueryExpressionInspector.cs" />
-    <Compile Include="Query\IQueryExpressionNormalizer.cs" />
     <Compile Include="Query\IQueryExpressionSourcer.cs" />
-    <Compile Include="Query\IQueryFilter.cs" />
-    <Compile Include="Query\IQueryHandler.cs" />
     <Compile Include="Query\QueryContext.cs" />
     <Compile Include="Query\QueryExpressionContext.cs" />
     <Compile Include="Query\QueryModelReference.cs" />
@@ -90,10 +101,7 @@
     <Compile Include="Submit\IChangeSetEntryFilter.cs" />
     <Compile Include="Submit\IChangeSetEntryValidator.cs" />
     <Compile Include="Submit\IChangeSetPreparer.cs" />
-    <Compile Include="Submit\ISubmitAuthorizer.cs" />
     <Compile Include="Submit\ISubmitExecutor.cs" />
-    <Compile Include="Submit\ISubmitFilter.cs" />
-    <Compile Include="Submit\ISubmitHandler.cs" />
     <Compile Include="Submit\SubmitContext.cs" />
     <Compile Include="Submit\SubmitResult.cs" />
     <Compile Include="Submit\ValidationException.cs" />
@@ -103,7 +111,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Microsoft.Restier.Core.nuspec" />
-    <None Include="packages.config" />
+    <None Include="packages.config">
+      <SubType>Designer</SubType>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Properties\Resources.resx">
@@ -115,12 +125,6 @@
     <CodeAnalysisDictionary Include="..\CodeAnalysisDictionary.xml">
       <Link>CodeAnalysisDictionary.xml</Link>
     </CodeAnalysisDictionary>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\odata.net\src\Microsoft.OData.Edm\Microsoft.OData.Edm.csproj">
-      <Project>{7d921888-fe03-4c3f-80fe-2f624505461c}</Project>
-      <Name>Microsoft.OData.Edm</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(StyleCopTargets)" Condition="Exists('$(StyleCopTargets)')" />

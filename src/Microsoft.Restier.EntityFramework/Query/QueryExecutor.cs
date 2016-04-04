@@ -1,12 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.  All rights reserved.
 // Licensed under the MIT License.  See License.txt in the project root for license information.
 
-using System;
-#if EF7
-using Microsoft.Data.Entity;
-using Microsoft.Data.Entity.Infrastructure;
-using IAsyncQueryProvider = Microsoft.Data.Entity.Query.IAsyncQueryProvider;
-#else
+#if !EF7
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 #endif
@@ -14,28 +9,25 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
+#if EF7
+using Microsoft.Data.Entity;
+using Microsoft.Data.Entity.Infrastructure;
+#endif
 using Microsoft.Restier.Core.Query;
+#if EF7
+using IAsyncQueryProvider = Microsoft.Data.Entity.Query.IAsyncQueryProvider;
+#endif
 
 namespace Microsoft.Restier.EntityFramework.Query
 {
     /// <summary>
     /// Represents a query executor that uses Entity Framework methods.
+    /// This class only executes queries against EF provider, it'll
+    /// delegate other queries to inner IQueryExecutor.
     /// </summary>
-    public class QueryExecutor : IQueryExecutor
+    internal class QueryExecutor : IQueryExecutor
     {
-        static QueryExecutor()
-        {
-            Instance = new QueryExecutor();
-        }
-
-        private QueryExecutor()
-        {
-        }
-
-        /// <summary>
-        /// Gets the single instance of this query executor.
-        /// </summary>
-        public static QueryExecutor Instance { get; private set; }
+        public IQueryExecutor Inner { get; set; }
 
         /// <summary>
         /// Asynchronously executes a query and produces a query result.
@@ -61,16 +53,17 @@ namespace Microsoft.Restier.EntityFramework.Query
             IQueryable<TElement> query,
             CancellationToken cancellationToken)
         {
-            long? totalCount = null;
-            if (context.Request.IncludeTotalCount == true)
+#if EF7
+            if (query.Provider is IAsyncQueryProvider)
+#else
+            if (query.Provider is IDbAsyncQueryProvider)
+#endif
             {
-                var countQuery = QueryExecutor.StripPagingOperators(query);
-                totalCount = await countQuery.LongCountAsync(cancellationToken);
+                return new QueryResult(
+                    await query.ToArrayAsync(cancellationToken));
             }
 
-            return new QueryResult(
-                await query.ToArrayAsync(cancellationToken),
-                totalCount);
+            return await Inner.ExecuteQueryAsync(context, query, cancellationToken);
         }
 
         /// <summary>
@@ -107,37 +100,14 @@ namespace Microsoft.Restier.EntityFramework.Query
 #else
             var provider = query.Provider as IDbAsyncQueryProvider;
 #endif
-            var result = await provider.ExecuteAsync<TResult>(
-                expression, cancellationToken);
-            return new QueryResult(new TResult[] { result });
-        }
-
-        private static IQueryable<TElement> StripPagingOperators<TElement>(
-            IQueryable<TElement> query)
-        {
-            var expression = query.Expression;
-            expression = QueryExecutor.StripQueryMethod(expression, "Take");
-            expression = QueryExecutor.StripQueryMethod(expression, "Skip");
-            if (expression != query.Expression)
+            if (provider != null)
             {
-                query = query.Provider.CreateQuery<TElement>(expression);
+                var result = await provider.ExecuteAsync<TResult>(
+                    expression, cancellationToken);
+                return new QueryResult(new TResult[] { result });
             }
 
-            return query;
-        }
-
-        private static Expression StripQueryMethod(
-            Expression expression, string methodName)
-        {
-            var methodCall = expression as MethodCallExpression;
-            if (methodCall != null &&
-                methodCall.Method.DeclaringType == typeof(Queryable) &&
-                methodCall.Method.Name.Equals(methodName, StringComparison.Ordinal))
-            {
-                expression = methodCall.Arguments[0];
-            }
-
-            return expression;
+            return await Inner.ExecuteSingleAsync<TResult>(context, query, expression, cancellationToken);
         }
     }
 }

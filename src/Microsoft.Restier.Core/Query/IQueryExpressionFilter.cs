@@ -11,8 +11,8 @@ namespace Microsoft.Restier.Core.Query
     /// <remarks>
     /// <para>
     /// Query expression filtering converts an expression node into a
-    /// different expression node according to domain logic such as a
-    /// restricting filter on top of some composable domain data.
+    /// different expression node according to API logic such as a
+    /// restricting filter on top of some composable API data.
     /// </para>
     /// <para>
     /// Filtering is the third step that occurs when processing a query
@@ -22,10 +22,6 @@ namespace Microsoft.Restier.Core.Query
     /// the resulting expression is recursively processed to ensure that all
     /// appropriate normalization, inspection, expansion, filtering and
     /// sourcing occurs.
-    /// </para>
-    /// <para>
-    /// This is a multi-cast hook point whose instances
-    /// are used in the original order of registration.
     /// </para>
     /// </remarks>
     public interface IQueryExpressionFilter

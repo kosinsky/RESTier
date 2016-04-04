@@ -4,14 +4,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Entity;
 using Microsoft.Data.Entity.ChangeTracking;
-using Microsoft.Data.Entity.Infrastructure;
-using Microsoft.Data.Entity.Metadata;
+using Microsoft.OData.Edm.Library;
 using Microsoft.Restier.Core;
 using Microsoft.Restier.Core.Query;
 using Microsoft.Restier.Core.Submit;
@@ -20,43 +20,46 @@ using Microsoft.Restier.EntityFramework.Properties;
 namespace Microsoft.Restier.EntityFramework.Submit
 {
     /// <summary>
-    /// This class convert OData entity changes (update/remove/create) to Entity Framework entity changes (in the form of StateEntry)
-    /// For this class we cannot reuse EF6 ChangeSetPreparer code, since many types used here have their type name or member name changed.
+    /// To prepare changed entries for the given <see cref="ChangeSet"/>.
+    /// For this class we cannot reuse EF6 ChangeSetPreparer code, since many types used here have their type name or
+    /// member name changed.
     /// </summary>
     public class ChangeSetPreparer : IChangeSetPreparer
     {
-        private ChangeSetPreparer()
-        {
-        }
+        private static MethodInfo prepareEntryGeneric = typeof(ChangeSetPreparer)
+            .GetMethod("PrepareEntry", BindingFlags.Static | BindingFlags.NonPublic);
 
-        private static readonly ChangeSetPreparer instance = new ChangeSetPreparer();
-
-        public static ChangeSetPreparer Instance { get { return instance; } }
-
-        private static MethodInfo _prepareEntryGeneric = typeof(ChangeSetPreparer).
-            GetMethod("PrepareEntry", BindingFlags.Static | BindingFlags.NonPublic);
-
+        /// <summary>
+        /// Asynchronously prepare the <see cref="ChangeSet"/>.
+        /// </summary>
+        /// <param name="context">The submit context class used for preparation.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The task object that represents this asynchronous operation.</returns>
         public async Task PrepareAsync(
             SubmitContext context,
             CancellationToken cancellationToken)
         {
-            DbContext dbContext = context.DomainContext.GetProperty<DbContext>("DbContext");
+            DbContext dbContext = context.GetApiService<DbContext>();
 
             foreach (var entry in context.ChangeSet.Entries.OfType<DataModificationEntry>())
             {
                 object strongTypedDbSet = dbContext.GetType().GetProperty(entry.EntitySetName).GetValue(dbContext);
                 Type entityType = strongTypedDbSet.GetType().GetGenericArguments()[0];
-                MethodInfo prepareEntryMethod = _prepareEntryGeneric.MakeGenericMethod(entityType);
+                MethodInfo prepareEntryMethod = prepareEntryGeneric.MakeGenericMethod(entityType);
 
-                await (Task)prepareEntryMethod.Invoke(
+                var task = (Task)prepareEntryMethod.Invoke(
                     obj: null,
-                    parameters: new object[] { context, dbContext, entry, strongTypedDbSet, cancellationToken });
+                    parameters: new[] { context, dbContext, entry, strongTypedDbSet, cancellationToken });
+                await task;
             }
         }
 
         private static async Task PrepareEntry<TEntity>(
-            SubmitContext context, DbContext dbContext, DataModificationEntry entry, DbSet<TEntity> set, CancellationToken cancellationToken)
-            where TEntity : class
+            SubmitContext context,
+            DbContext dbContext,
+            DataModificationEntry entry,
+            DbSet<TEntity> set,
+            CancellationToken cancellationToken) where TEntity : class
         {
             Type entityType = typeof(TEntity);
             TEntity entity;
@@ -76,10 +79,18 @@ namespace Microsoft.Restier.EntityFramework.Submit
             }
             else if (entry.IsUpdate)
             {
-                entity = (TEntity)await ChangeSetPreparer.FindEntity(context, entry, cancellationToken);
+                if (entry.IsFullReplaceUpdate)
+                {
+                    entity = (TEntity)ChangeSetPreparer.CreateFullUpdateInstance(entry, entityType);
+                    dbContext.Update(entity);
+                }
+                else
+                {
+                    entity = (TEntity)await ChangeSetPreparer.FindEntity(context, entry, cancellationToken);
 
-                var dbEntry = dbContext.Update(entity);
-                ChangeSetPreparer.SetValues(dbEntry, entry, entityType);
+                    var dbEntry = dbContext.Attach(entity);
+                    ChangeSetPreparer.SetValues(dbEntry, entry, entityType);
+                }
             }
             else
             {
@@ -89,12 +100,17 @@ namespace Microsoft.Restier.EntityFramework.Submit
             entry.Entity = entity;
         }
 
-        private static async Task<object> FindEntity(SubmitContext context, DataModificationEntry entry, CancellationToken cancellationToken)
+        private static async Task<object> FindEntity(
+            SubmitContext context,
+            DataModificationEntry entry,
+            CancellationToken cancellationToken)
         {
-            IQueryable query = Domain.Source(context.DomainContext, entry.EntitySetName);
+            IQueryable query = context.ApiContext.Source(entry.EntitySetName);
             query = entry.ApplyTo(query);
 
-            QueryResult result = await Domain.QueryAsync(context.DomainContext, new QueryRequest(query), cancellationToken);
+            QueryResult result = await context.ApiContext.QueryAsync(
+                new QueryRequest(query),
+                cancellationToken);
 
             object entity = result.Results.SingleOrDefault();
             if (entity == null)
@@ -104,90 +120,125 @@ namespace Microsoft.Restier.EntityFramework.Submit
                 // 1) it doesn't exist
                 // 2) concurrency checks have failed
                 // we should account for both - I can see 3 options:
-                // a. always return "PreConditionFailed" result - this is the canonical behavior of WebAPI OData (see http://blogs.msdn.com/b/webdev/archive/2014/03/13/getting-started-with-asp-net-web-api-2-2-for-odata-v4-0.aspx)
+                // a. always return "PreConditionFailed" result
+                //  - this is the canonical behavior of WebAPI OData, see the following post:
+                //    "Getting started with ASP.NET Web API 2.2 for OData v4.0" on http://blogs.msdn.com/b/webdev/.
                 //  - this makes sense because if someone deleted the record, then you still have a concurrency error
                 // b. possibly doing a 2nd query with just the keys to see if the record still exists
-                // c. only query with the keys, and then set the DbEntityEntry's OriginalValues to the ETag values, letting the save fail if there are concurrency errors
+                // c. only query with the keys, and then set the DbEntityEntry's OriginalValues to the ETag values,
+                //    letting the save fail if there are concurrency errors
 
-                //throw new EntityNotFoundException
+                ////throw new EntityNotFoundException
                 throw new InvalidOperationException(Resources.ResourceNotFound);
             }
 
             return entity;
         }
 
+        private static object CreateFullUpdateInstance(DataModificationEntry entry, Type entityType)
+        {
+            // The algorithm for a "FullReplaceUpdate" is taken from ObjectContextServiceProvider.ResetResource
+            // in WCF DS, and works as follows:
+            //  - Create a new, blank instance of the entity.
+            //  - Copy over the key values and set any updated values from the client on the new instance.
+            //  - Then apply all the properties of the new instance to the instance to be updated.
+            //    This will set any unspecified properties to their default value.
+            object newInstance = Activator.CreateInstance(entityType);
+
+            ChangeSetPreparer.SetValues(newInstance, entityType, entry.EntityKey);
+            ChangeSetPreparer.SetValues(newInstance, entityType, entry.LocalValues);
+
+            return newInstance;
+        }
+
         private static void SetValues(EntityEntry dbEntry, DataModificationEntry entry, Type entityType)
         {
-            //StateEntry stateEntry = ((IAccessor<InternalEntityEntry>) dbEntry.StateEntry;
-            IEntityType edmType = dbEntry.Metadata;
-
-            if (entry.IsFullReplaceUpdate)
+            foreach (KeyValuePair<string, object> propertyPair in entry.LocalValues)
             {
-                // The algorithm for a "FullReplaceUpdate" is taken from WCF DS ObjectContextServiceProvider.ResetResource, and is as follows:
-                // Create a new, blank instance of the entity.  Copy over the key values, and set any updated values from the client on the new instance.
-                // Then apply all the properties of the new instance to the instance to be updated.  This will set any unspecified
-                // properties to their default value.
-
-                object newInstance = Activator.CreateInstance(entityType);
-
-                ChangeSetPreparer.SetValues(newInstance, entityType, entry.EntityKey);
-                ChangeSetPreparer.SetValues(newInstance, entityType, entry.LocalValues);
-
-                foreach (var property in edmType.GetProperties())
+                PropertyEntry propertyEntry = dbEntry.Property(propertyPair.Key);
+                Type type = TypeHelper.GetUnderlyingTypeOrSelf(propertyEntry.Metadata.ClrType);
+                object value = propertyPair.Value;
+                value = ConvertIfNecessary(type, value);
+                if (value != null && !type.IsInstanceOfType(value))
                 {
-                    object val;
-                    if (!entry.LocalValues.TryGetValue(property.Name, out val))
+                    var dic = value as IReadOnlyDictionary<string, object>;
+                    if (dic == null)
                     {
-                        PropertyInfo propertyInfo = entityType.GetProperty(property.Name);
-                        val = propertyInfo.GetValue(newInstance);
+                        throw new NotSupportedException(string.Format(
+                            CultureInfo.InvariantCulture,
+                            Resources.UnsupportedPropertyType,
+                            propertyPair.Key));
                     }
-                    //stateEntry[property] = val;
-                    dbEntry.Property(property.Name).CurrentValue = val;
+
+                    value = Activator.CreateInstance(type);
+                    SetValues(value, type, dic);
                 }
-            }
-            else
-            {
-                // For some properties like DateTimeOffset, the backing EF property could be of a different type like DateTime, so we can't just
-                // copy every property pair in DataModificationEntry to EF StateEntry, instead we let the entity type to do the conversion, by
-                // first setting the EDM property (in DataModificationEntry) to a entity instance, then getting the EF mapped property from the
-                // entity instance and set to StateEntry.
 
-                object instance = null;
-
-                foreach (var property in edmType.GetProperties())
-                {
-                    object val;
-
-                    var edmPropName = (string)property["EdmPropertyName"];
-                    if (edmPropName != null && entry.LocalValues.TryGetValue(edmPropName, out val))
-                    {
-                        if (instance == null)
-                        {
-                            instance = Activator.CreateInstance(entityType);
-                        }
-                        PropertyInfo edmPropInfo = entityType.GetProperty(edmPropName);
-                        edmPropInfo.SetValue(instance, val);
-
-                        PropertyInfo propertyInfo = entityType.GetProperty(property.Name);
-                        val = propertyInfo.GetValue(instance);
-                    }
-                    else if (!entry.LocalValues.TryGetValue(property.Name, out val))
-                    {
-                        continue;
-                    }
-                    //stateEntry[property] = val;
-                    dbEntry.Property(property.Name).CurrentValue = val;
-                }
+                propertyEntry.CurrentValue = value;
             }
         }
 
-        private static void SetValues(object instance, Type type, IReadOnlyDictionary<string, object> values)
+        private static void SetValues(object instance, Type instanceType, IReadOnlyDictionary<string, object> values)
         {
             foreach (KeyValuePair<string, object> propertyPair in values)
             {
-                PropertyInfo propertyInfo = type.GetProperty(propertyPair.Key);
-                propertyInfo.SetValue(instance, propertyPair.Value);
+                PropertyInfo propertyInfo = instanceType.GetProperty(propertyPair.Key);
+                Type type = TypeHelper.GetUnderlyingTypeOrSelf(propertyInfo.PropertyType);
+                object value = propertyPair.Value;
+                value = ConvertIfNecessary(type, value);
+                if (value != null && !type.IsInstanceOfType(value))
+                {
+                    var dic = value as IReadOnlyDictionary<string, object>;
+                    if (dic == null)
+                    {
+                        throw new NotSupportedException(string.Format(
+                            CultureInfo.InvariantCulture,
+                            Resources.UnsupportedPropertyType,
+                            propertyPair.Key));
+                    }
+
+                    value = Activator.CreateInstance(type);
+                    SetValues(value, type, dic);
+                }
+
+                propertyInfo.SetValue(instance, value);
             }
+        }
+
+        private static object ConvertIfNecessary(Type type, object value)
+        {
+            // Convert to System.Enum from name or value STRING provided by ODL.
+            if (type.IsEnum)
+            {
+                return Enum.Parse(type, (string)value);
+            }
+
+            // Convert to System.DateTime supported by EF from Edm.Date.
+            if (value is Date)
+            {
+                var dateValue = (Date)value;
+                return (DateTime)dateValue;
+            }
+
+            // Convert to System.DateTime supported by EF from DateTimeOffset.
+            if (value is DateTimeOffset)
+            {
+                if (TypeHelper.IsDateTime(type))
+                {
+                    return ((DateTimeOffset)value).DateTime;
+                }
+            }
+
+            // Convert to System.DateTime supported by EF from DateTimeOffset.
+            if (value is TimeOfDay)
+            {
+                if (TypeHelper.IsTimeSpan(type))
+                {
+                    return (TimeSpan)(TimeOfDay)value;
+                }
+            }
+
+            return value;
         }
     }
 }

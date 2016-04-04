@@ -2,32 +2,34 @@
 // Licensed under the MIT License.  See License.txt in the project root for license information.
 
 using System;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Restier.Core;
 
 namespace Microsoft.Restier.Security
 {
     /// <summary>
     /// Specifies that principal-supplied role-based
-    /// security should be enabled for a domain.
+    /// security should be enabled for an API.
     /// </summary>
     [Serializable]
     [AttributeUsage(AttributeTargets.Class)]
-    public sealed class EnableRoleBasedSecurityAttribute : DomainParticipantAttribute
+    public sealed class EnableRoleBasedSecurityAttribute : ApiConfiguratorAttribute
     {
         /// <summary>
-        /// Configures a domain configuration.
+        /// Configures an API configuration.
         /// </summary>
-        /// <param name="configuration">
-        /// A domain configuration.
+        /// <param name="services">
+        /// The API services registration.
         /// </param>
         /// <param name="type">
-        /// The domain type on which this attribute was placed.
+        /// The API type on which this attribute was placed.
         /// </param>
-        public override void Configure(
-            DomainConfiguration configuration,
+        [CLSCompliant(false)]
+        public override void ConfigureApi(
+            IServiceCollection services,
             Type type)
         {
-            configuration.EnableRoleBasedSecurity();
+            services.EnableRoleBasedSecurity();
         }
     }
 }

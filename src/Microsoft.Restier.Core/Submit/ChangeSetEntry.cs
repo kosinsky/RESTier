@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 using Microsoft.Restier.Core.Properties;
@@ -62,7 +63,7 @@ namespace Microsoft.Restier.Core.Submit
     /// </summary>
     /// <remarks>
     /// This is required because during the post-CUD events, the EntityState has been lost.
-    /// This enum allows the DomainService to remember which pre-CUD event was raised for the Entity.
+    /// This enum allows the API to remember which pre-CUD event was raised for the Entity.
     /// </remarks>
     public enum AddAction
     {
@@ -281,7 +282,7 @@ namespace Microsoft.Restier.Core.Submit
         /// </returns>
         public IQueryable ApplyTo(IQueryable query)
         {
-            Ensure.NotNull(query);
+            Ensure.NotNull(query, "query");
             if (this.IsNew)
             {
                 throw new InvalidOperationException(Resources.DataModificationNotSupportCreateEntity);
@@ -324,14 +325,20 @@ namespace Microsoft.Restier.Core.Submit
             Expression where,
             KeyValuePair<string, object> item)
         {
-            MemberExpression name = Expression.Property(param, item.Key);
+            MemberExpression property = Expression.Property(param, item.Key);
             object itemValue = item.Value;
+
+            if (itemValue.GetType() != property.Type)
+            {
+                itemValue = Convert.ChangeType(itemValue, property.Type, CultureInfo.InvariantCulture);
+            }
 
             // TODO GitHubIssue#31 : Check if LinqParameterContainer is necessary
             // Expression value = itemValue != null
             //     ? LinqParameterContainer.Parameterize(itemValue.GetType(), itemValue)
             //     : Expression.Constant(value: null);
-            BinaryExpression equal = Expression.Equal(name, Expression.Constant(item.Value));
+            var constant = Expression.Constant(itemValue, property.Type);
+            BinaryExpression equal = Expression.Equal(property, constant);
             return where == null ? equal : Expression.AndAlso(where, equal);
         }
     }

@@ -2,17 +2,18 @@
 // Licensed under the MIT License.  See License.txt in the project root for license information.
 
 using System;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Restier.Core;
 
 namespace Microsoft.Restier.Security
 {
     /// <summary>
-    /// Specifies a role-based security statement for a domain that
+    /// Specifies a role-based security statement for an API that
     /// grants permission on a securable element to a specific role.
     /// </summary>
     [Serializable]
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
-    public sealed class GrantAttribute : DomainParticipantAttribute
+    public sealed class GrantAttribute : ApiConfiguratorAttribute
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="GrantAttribute" /> class.
@@ -48,30 +49,29 @@ namespace Microsoft.Restier.Security
         public string OnChild { get; set; }
 
         /// <summary>
-        /// Gets or sets the role to which this domain permission applies.
+        /// Gets or sets the role to which this API permission applies.
         /// </summary>
         public string To { get; set; }
 
         /// <summary>
-        /// Configures a domain configuration.
+        /// Configure an API.
         /// </summary>
-        /// <param name="configuration">
-        /// A domain configuration.
+        /// <param name="services">
+        /// The API services registration.
         /// </param>
         /// <param name="type">
-        /// The domain type on which this attribute was placed.
+        /// The API type on which this attribute was placed.
         /// </param>
-        public override void Configure(
-            DomainConfiguration configuration,
-            Type type)
+        [CLSCompliant(false)]
+        public override void ConfigureApi(IServiceCollection services, Type type)
         {
-            var permission = DomainPermission.CreateGrant(
+            var permission = ApiPermission.CreateGrant(
                 this.PermissionType,
                 this.To,
                 this.OnNamespace,
                 this.On,
                 this.OnChild);
-            configuration.AddPermission(permission);
+            services.AddInstance(permission);
         }
     }
 }

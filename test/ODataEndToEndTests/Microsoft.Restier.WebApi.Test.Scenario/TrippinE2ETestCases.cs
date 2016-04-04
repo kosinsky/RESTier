@@ -68,9 +68,34 @@ namespace Microsoft.Restier.WebApi.Test.Scenario
         }
 
         [Fact]
+        public void MetadataShouldContainEnumProperty()
+        {
+            var requestMessage = new HttpWebRequestMessage(
+                new DataServiceClientRequestMessageArgs(
+                    "GET",
+                    new Uri(this.ServiceBaseUri.OriginalString + "$metadata", UriKind.Absolute),
+                    true,
+                    false,
+                    new Dictionary<string, string>()));
+            using (var r = new StreamReader(requestMessage.GetResponse().GetStream()))
+            {
+                var modelStr = r.ReadToEnd();
+
+                Assert.Contains("<EnumType Name=\"Feature\">", modelStr, StringComparison.Ordinal);
+                Assert.Contains("<Member Name=\"Feature1\" Value=\"0\" />", modelStr, StringComparison.Ordinal);
+                Assert.Contains("<Member Name=\"Feature2\" Value=\"1\" />", modelStr, StringComparison.Ordinal);
+                Assert.Contains("<Member Name=\"Feature3\" Value=\"2\" />", modelStr, StringComparison.Ordinal);
+                Assert.Contains("<Member Name=\"Feature4\" Value=\"3\" />", modelStr, StringComparison.Ordinal);
+                Assert.Contains("<Property Name=\"FavoriteFeature\"", modelStr, StringComparison.Ordinal);
+                Assert.Contains("<Property Name=\"FavoriteFeature2\"", modelStr, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
         public void CURDEntity()
         {
-            this.TestClientContext.MergeOption = Microsoft.OData.Client.MergeOption.OverwriteChanges;
+            this.TestClientContext.MergeOption = MergeOption.OverwriteChanges;
+
             // Post an entity
             Person person = new Person()
             {
@@ -201,11 +226,6 @@ namespace Microsoft.Restier.WebApi.Test.Scenario
                 { "Content-Type", "application/json" } 
             };
 
-            ODataMessageWriterSettings writerSettings = new ODataMessageWriterSettings
-            {
-                PayloadBaseUri = this.TestClientContext.BaseUri
-            };
-
             HttpWebRequestMessage request = new HttpWebRequestMessage(
                 new DataServiceClientRequestMessageArgs(
                     "Put",
@@ -308,8 +328,16 @@ namespace Microsoft.Restier.WebApi.Test.Scenario
             // skip
             people2 = this.TestClientContext.People.Skip(personId - 1).ToList();
             Assert.Equal(personId, people2.First().PersonId);
-
-            // TODO GitHubIssue#46 : case for $count=true
+            
+            // count
+            var countQuery = this.TestClientContext.People.IncludeTotalCount().Skip(1).Take(2) as DataServiceQuery<Person>;
+            var response = countQuery.Execute() as QueryOperationResponse<Person>;
+            Assert.Equal(response.TotalCount, 14);
+            
+            // count with expand
+            countQuery = this.TestClientContext.People.IncludeTotalCount().Expand("Friends").Skip(1).Take(2) as DataServiceQuery<Person>;
+            response = countQuery.Execute() as QueryOperationResponse<Person>;
+            Assert.Equal(response.TotalCount, 14);
         }
 
         [Fact]
@@ -504,6 +532,47 @@ namespace Microsoft.Restier.WebApi.Test.Scenario
         }
 
         [Fact]
+        public void PostNonContainedEntityToNavigationProperty()
+        {
+            // Note that this scenario DOES NOT conform to OData spec because the client
+            // should post a non-contained entity directly to the entity set rather than
+            // the navigation property. This case is just to repro a customer scenario
+            // and test if the action TrippinController.PostToTripsFromPeople works.
+            var personId = 2;
+            var person = this.TestClientContext.People.ByKey(
+                new Dictionary<string, object> { { "PersonId", personId } }).GetValue();
+
+            var startDate = DateTime.Now;
+            var trip = new Trip()
+            {
+                PersonId = personId,
+                TrackGuid = Guid.NewGuid(),
+                ShareId = new Guid("32a7ce27-7092-4754-a694-3ebf90278d0b"),
+                Name = "Mars",
+                Budget = 2000.0f,
+                Description = "Happy Mars trip",
+                StartsAt = startDate,
+                EndsAt = startDate.AddYears(14),
+                LastUpdated = DateTime.UtcNow,
+            };
+
+            // By default, this line of code would issue a POST request to the entity set
+            // for non-contained navigation property.
+            this.TestClientContext.AddRelatedObject(person, "Trips", trip);
+            this.TestClientContext.Configurations.RequestPipeline.OnMessageCreating = args =>
+                new HttpWebRequestMessage(
+                    new DataServiceClientRequestMessageArgs(
+                        args.Method,
+                        new Uri(string.Format(this.TestClientContext.BaseUri + "/People({0})/Trips", personId),
+                            UriKind.Absolute), // Force POST to navigation property instead of entity set.
+                        args.UseDefaultCredentials,
+                        args.UsePostTunneling,
+                        args.Headers));
+            var response = this.TestClientContext.SaveChanges();
+            Assert.Equal(201, response.Single().StatusCode);
+        }
+
+        [Fact]
         public void CURDCollectionNavigationPropertyAndRef()
         {
             this.TestClientContext.MergeOption = MergeOption.OverwriteChanges;
@@ -571,10 +640,6 @@ namespace Microsoft.Restier.WebApi.Test.Scenario
                     false,
                     new Dictionary<string, string>()));
 
-            ODataMessageReaderSettings readerSettings = new ODataMessageReaderSettings
-            {
-                BaseUri = this.TestClientContext.BaseUri
-            };
             using (var response = request.GetResponse() as HttpWebResponseMessage)
             {
                 Assert.Equal(200, response.StatusCode);
@@ -798,6 +863,94 @@ namespace Microsoft.Restier.WebApi.Test.Scenario
 
             Assert.NotNull(exception);
             Assert.Equal(404, exception.Response.StatusCode);
+        }
+
+        [Fact]
+        public void ConventionBasedChangeSetAuthorizerTest()
+        {
+            var trip = this.TestClientContext.Trips.First();
+            this.TestClientContext.DeleteObject(trip);
+            var ex = Assert.Throws<DataServiceRequestException>(() => this.TestClientContext.SaveChanges());
+            var clientException = Assert.IsAssignableFrom<DataServiceClientException>(ex.InnerException);
+            Assert.Equal(403, clientException.StatusCode);
+            Assert.Contains(
+                "The current user does not have permission to delete entities from the EntitySet 'Trips'.",
+                clientException.Message);
+        }
+
+        [Theory]
+        [InlineData("People/$count", "13")]
+        [InlineData("People(1)/Friends/$count", "1")]
+        [InlineData("Flights/$count", "4")]
+        [InlineData("People/$count?$filter=indexof(FirstName,'R') eq 0", "3")]
+        [InlineData("People/$count?$filter=indexof(FirstName,'R') eq 0&$top(1)", "3")]
+        [InlineData("People/$count?$filter=indexof(FirstName,'R') eq 0&$skip(1)&$top(1)", "3")]
+        public void TestCountEntities(string uriStringAfterServiceRoot, string expectedString)
+        {
+            this.TestGetPayloadIs(uriStringAfterServiceRoot, expectedString);
+        }
+
+        [Theory]
+        [InlineData("Me", "http://localhost:18384/api/Trippin/$metadata#Me")]
+        public void TestSingleton(string uriStringAfterServiceRoot, string expectedSubString)
+        {
+            this.TestGetPayloadContains(uriStringAfterServiceRoot, expectedSubString);
+        }
+
+        [Theory]
+        [InlineData("Me/UserName", "http://localhost:18384/api/Trippin/$metadata#Me/UserName")]
+        [InlineData("Me/FavoriteFeature", "http://localhost:18384/api/Trippin/$metadata#Me/FavoriteFeature")]
+        [InlineData("Me/Friends", "http://localhost:18384/api/Trippin/$metadata#People")]
+        [InlineData("Me/Trips", "http://localhost:18384/api/Trippin/$metadata#Trips")]
+        public void TestSingletonPropertyAccess(string uriStringAfterServiceRoot, string expectedSubString)
+        {
+            this.TestGetPayloadContains(uriStringAfterServiceRoot, expectedSubString);
+        }
+
+        [Theory]
+        [InlineData("Me/FavoriteFeature2", 204)]
+        public void TestSingletonPropertyAccessStatus(string uriStringAfterServiceRoot, int statusCode)
+        {
+            this.TestGetStatusCodeIs(uriStringAfterServiceRoot, statusCode);
+        }
+
+        [Theory]
+        [InlineData("Me/PersonId/$value", "1")]
+        public void TestSingletonPropertyRawValueAccess(string uriStringAfterServiceRoot, string expectedString)
+        {
+            this.TestGetPayloadIs(uriStringAfterServiceRoot, expectedString);
+        }
+
+        [Theory]
+        [InlineData("Me?$expand=Friends", ",\"Friends\":[")]
+        [InlineData("Me?$select=UserName,PersonId", "http://localhost:18384/api/Trippin/$metadata#Me(UserName,PersonId)")]
+        public void TestSingletonWithQueryOptions(string uriStringAfterServiceRoot, string expectedSubString)
+        {
+            this.TestGetPayloadContains(uriStringAfterServiceRoot, expectedSubString);
+        }
+
+        [Theory]
+        [InlineData("People?$count=true")]
+        [InlineData("People(1)/Friends?$count=true")]
+        [InlineData("People?$filter=PersonId gt 5&$count=true")]
+        [InlineData("Me/Friends?$count=true")]
+        [InlineData("GetPeopleWithFriendsAtLeast(n=1)?$count=true")]
+        public void TestCountQueryOptionIsTrue(string uriStringAfterServiceRoot)
+        {
+            this.TestGetPayloadContains(uriStringAfterServiceRoot, "@odata.count");
+        }
+
+        [Theory]
+        [InlineData("People?$count=false")]
+        [InlineData("People(1)/Friends?$count=false")]
+        [InlineData("GetPeopleWithFriendsAtLeast(n=1)?$count=false")]
+        [InlineData("People")]
+        [InlineData("People(1)/Friends")]
+        [InlineData("GetPeopleWithFriendsAtLeast(n=1)")]
+        [InlineData("Me?$count=true")]
+        public void TestCountQueryOptionIsFalse(string uriStringAfterServiceRoot)
+        {
+            this.TestGetPayloadDoesNotContain(uriStringAfterServiceRoot, "@odata.count");
         }
     }
 }

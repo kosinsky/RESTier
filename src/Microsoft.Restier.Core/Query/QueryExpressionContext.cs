@@ -16,6 +16,8 @@ namespace Microsoft.Restier.Core.Query
     /// </summary>
     public class QueryExpressionContext
     {
+        private const string MethodNameOfDataSourceStubValue = "Value";
+
         private Stack<Expression> visitedNodes = new Stack<Expression>();
         private IDictionary<Expression, QueryModelReference> modelReferences =
             new Dictionary<Expression, QueryModelReference>();
@@ -175,10 +177,10 @@ namespace Microsoft.Restier.Core.Query
             if (methodCall != null)
             {
                 var method = methodCall.Method;
-                if (method.DeclaringType == typeof(DomainData) &&
-                    method.Name != "Value")
+                if (method.DeclaringType == typeof(DataSourceStubs) &&
+                    method.Name != MethodNameOfDataSourceStubValue)
                 {
-                    modelReference = ComputeDomainDataReference(methodCall);
+                    modelReference = ComputeDataSourceStubReference(methodCall);
                 }
                 else if (method.GetCustomAttributes<ExtensionAttribute>().Any())
                 {
@@ -236,10 +238,10 @@ namespace Microsoft.Restier.Core.Query
             return modelReference;
         }
 
-        private DomainDataReference ComputeDomainDataReference(
+        private DataSourceStubReference ComputeDataSourceStubReference(
             MethodCallExpression methodCall)
         {
-            DomainDataReference modelReference = null;
+            DataSourceStubReference modelReference = null;
             ConstantExpression namespaceName = null;
             ConstantExpression name = null;
             var argumentIndex = 0;
@@ -256,12 +258,12 @@ namespace Microsoft.Restier.Core.Query
                 {
                     if (namespaceName == null)
                     {
-                        modelReference = new DomainDataReference(
+                        modelReference = new DataSourceStubReference(
                             this.QueryContext, nameValue);
                     }
                     else
                     {
-                        modelReference = new DomainDataReference(
+                        modelReference = new DataSourceStubReference(
                             this.QueryContext,
                             namespaceName.Value as string,
                             nameValue);

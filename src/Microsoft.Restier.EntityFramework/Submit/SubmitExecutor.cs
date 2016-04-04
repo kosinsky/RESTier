@@ -1,13 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.  All rights reserved.
 // Licensed under the MIT License.  See License.txt in the project root for license information.
 
-#if EF7
-using Microsoft.Data.Entity;
-#else
+#if !EF7
 using System.Data.Entity;
 #endif
 using System.Threading;
 using System.Threading.Tasks;
+#if EF7
+using Microsoft.Data.Entity;
+#endif
 using Microsoft.Restier.Core.Submit;
 
 namespace Microsoft.Restier.EntityFramework.Submit
@@ -15,7 +16,7 @@ namespace Microsoft.Restier.EntityFramework.Submit
     /// <summary>
     /// To execute submission of changes to database.
     /// </summary>
-    public class SubmitExecutor : ISubmitExecutor
+    internal class SubmitExecutor : ISubmitExecutor
     {
         static SubmitExecutor()
         {
@@ -40,7 +41,7 @@ namespace Microsoft.Restier.EntityFramework.Submit
         public async Task<SubmitResult> ExecuteSubmitAsync(
             SubmitContext context, CancellationToken cancellationToken)
         {
-            DbContext dbContext = context.DomainContext.GetProperty<DbContext>("DbContext");
+            DbContext dbContext = context.GetApiService<DbContext>();
 
             await dbContext.SaveChangesAsync(cancellationToken);
 

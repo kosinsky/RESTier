@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -21,22 +22,8 @@ namespace Microsoft.Restier.EntityFramework.Submit
     /// <summary>
     /// To prepare changed entries for the given <see cref="ChangeSet"/>.
     /// </summary>
-    public class ChangeSetPreparer : IChangeSetPreparer
+    internal class ChangeSetPreparer : IChangeSetPreparer
     {
-        static ChangeSetPreparer()
-        {
-            Instance = new ChangeSetPreparer();
-        }
-
-        private ChangeSetPreparer()
-        {
-        }
-
-        /// <summary>
-        /// Gets the singleton instance of the <see cref="ChangeSetPreparer"/> class.
-        /// </summary>
-        public static ChangeSetPreparer Instance { get; private set; }
-
         /// <summary>
         /// Asynchronously prepare the <see cref="ChangeSet"/>.
         /// </summary>
@@ -47,7 +34,7 @@ namespace Microsoft.Restier.EntityFramework.Submit
             SubmitContext context,
             CancellationToken cancellationToken)
         {
-            DbContext dbContext = context.DomainContext.GetProperty<DbContext>("DbContext");
+            DbContext dbContext = context.ApiContext.GetApiService<DbContext>();
 
             foreach (var entry in context.ChangeSet.Entries.OfType<DataModificationEntry>())
             {
@@ -91,13 +78,10 @@ namespace Microsoft.Restier.EntityFramework.Submit
             DataModificationEntry entry,
             CancellationToken cancellationToken)
         {
-            IQueryable query = Domain.Source(context.DomainContext, entry.EntitySetName);
+            IQueryable query = context.ApiContext.Source(entry.EntitySetName);
             query = entry.ApplyTo(query);
 
-            QueryResult result = await Domain.QueryAsync(
-                context.DomainContext,
-                new QueryRequest(query),
-                cancellationToken);
+            QueryResult result = await context.ApiContext.QueryAsync(new QueryRequest(query), cancellationToken);
 
             object entity = result.Results.SingleOrDefault();
             if (entity == null)
@@ -145,22 +129,30 @@ namespace Microsoft.Restier.EntityFramework.Submit
                 {
                     DbPropertyEntry propertyEntry = dbEntry.Property(propertyPair.Key);
                     object value = propertyPair.Value;
+                    if (value == null)
+                    {
+                        // If the property value is null, we set null in the entry too.
+                        propertyEntry.CurrentValue = null;
+                        continue;
+                    }
 
+                    Type type = propertyEntry.CurrentValue.GetType();
                     if (propertyEntry is DbComplexPropertyEntry)
                     {
                         var dic = value as IReadOnlyDictionary<string, object>;
                         if (dic == null)
                         {
-                            // TODO GitHubIssue#103 : Choose property error message for unknown type
-                            throw new NotSupportedException("Unsupported type for property:" + propertyPair.Key);
+                            throw new NotSupportedException(string.Format(
+                                CultureInfo.InvariantCulture,
+                                Resources.UnsupportedPropertyType,
+                                propertyPair.Key));
                         }
 
-                        var type = propertyEntry.CurrentValue.GetType();
                         value = Activator.CreateInstance(type);
                         SetValues(value, type, dic);
                     }
 
-                    propertyEntry.CurrentValue = ConvertToEfDateTimeIfValueIsEdmDate(value);
+                    propertyEntry.CurrentValue = ConvertToEfValue(type, value);
                 }
             }
         }
@@ -170,15 +162,24 @@ namespace Microsoft.Restier.EntityFramework.Submit
             foreach (KeyValuePair<string, object> propertyPair in values)
             {
                 object value = propertyPair.Value;
-                value = ConvertToEfDateTimeIfValueIsEdmDate(value);
                 PropertyInfo propertyInfo = type.GetProperty(propertyPair.Key);
+                if (value == null)
+                {
+                    // If the property value is null, we set null in the object too.
+                    propertyInfo.SetValue(instance, null);
+                    continue;
+                }
+
+                value = ConvertToEfValue(propertyInfo.PropertyType, value);
                 if (value != null && !propertyInfo.PropertyType.IsInstanceOfType(value))
                 {
                     var dic = value as IReadOnlyDictionary<string, object>;
                     if (dic == null)
                     {
-                        // TODO GitHubIssue#103 : Choose property error message for unknown type
-                        throw new NotSupportedException("Unsupported type for property:" + propertyPair.Key);
+                        throw new NotSupportedException(string.Format(
+                            CultureInfo.InvariantCulture,
+                            Resources.UnsupportedPropertyType,
+                            propertyPair.Key));
                     }
 
                     value = Activator.CreateInstance(propertyInfo.PropertyType);
@@ -189,12 +190,33 @@ namespace Microsoft.Restier.EntityFramework.Submit
             }
         }
 
-        private static object ConvertToEfDateTimeIfValueIsEdmDate(object value)
+        private static object ConvertToEfValue(Type type, object value)
         {
+            // string[EdmType = Enum] => System.Enum
+            if (TypeHelper.IsEnum(type))
+            {
+                return Enum.Parse(TypeHelper.GetUnderlyingTypeOrSelf(type), (string)value);
+            }
+
+            // Edm.Date => System.DateTime[SqlType = Date]
             if (value is Date)
             {
                 var dateValue = (Date)value;
                 return (DateTime)dateValue;
+            }
+
+            // System.DateTimeOffset => System.DateTime[SqlType = DateTime or DateTime2]
+            if (value is DateTimeOffset && TypeHelper.IsDateTime(type))
+            {
+                var dateTimeOffsetValue = (DateTimeOffset)value;
+                return dateTimeOffsetValue.DateTime;
+            }
+
+            // Edm.TimeOfDay => System.TimeSpan[SqlType = Time]
+            if (value is TimeOfDay && TypeHelper.IsTimeSpan(type))
+            {
+                var timeOfDayValue = (TimeOfDay)value;
+                return (TimeSpan)timeOfDayValue;
             }
 
             return value;
